@@ -1,0 +1,22 @@
+
+## Add custom headers
+#Header set X-Content-Type-Options "nosniff"
+#Header set X-XSS-Protection "1; mode=block"
+# Always set these headers for CORS.
+#Header always set Access-Control-Max-Age: 1728000
+Header always set Access-Control-Allow-Origin "*"
+Header always set Access-Control-Allow-Methods "POST, GET, OPTIONS, DELETE, PUT"
+Header always set Access-Control-Allow-Headers: "append,delete,entries,foreach,get,has,keys,set,values,DNT,X-CustomHeader,Keep-Alive,User-Agent,X-CustomHeader"
+#Header always set Access-Control-Allow-Headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,C$
+#Header always set Access-Control-Allow-Credentials true
+
+####################
+# Handling Options for the CORS
+ RewriteCond %{REQUEST_METHOD} OPTIONS
+ RewriteRule ^(.*)$ $1 [L,R=204]
+
+#RewriteEngine On
+#RewriteCond %{REQUEST_METHOD} OPTIONS
+#RewriteRule ^(.*)$ $1 [R=200,L]
+
+#################

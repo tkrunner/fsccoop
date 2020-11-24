@@ -1,0 +1,14 @@
+@import "fonts/thaisansneue/thaisansneue.css";
+.btn-primary{
+	background-color: #067c3b;
+    border-color: #067c3b;
+}
+
+.btn-primary.focus,.btn-primary:focus{background-color: #045b2b;border-color: #045b2b;color:#fff}
+.btn-primary:hover{background-color: #045b2b;border-color: #045b2b;color:#fff}
+.btn-primary.active,.btn-primary:active,.open>.btn-primary.dropdown-toggle{background-color: #045b2b;border-color: #045b2b;color:#fff}
+.btn-primary.active.focus,.btn-primary.active:focus,.btn-primary.active:hover,.btn-primary:active.focus,.btn-primary:active:focus,.btn-primary:active:hover,.open>.btn-primary.dropdown-toggle.focus,.open>.btn-primary.dropdown-toggle:focus,.open>.btn-primary.dropdown-toggle:hover{background-color: #045b2b;border-color: #045b2b;color:#fff}
+.btn-primary.disabled.focus,.btn-primary.disabled:focus,.btn-primary.disabled:hover,.btn-primary[disabled].focus,.btn-primary[disabled]:focus,.btn-primary[disabled]:hover,fieldset[disabled] .btn-primary.focus,fieldset[disabled] .btn-primary:focus,fieldset[disabled] .btn-primary:hover{background-color: #045b2b;border-color: #045b2b
+}
+.btn-primary .badge{background-color:#fff;color: #045b2b
+}

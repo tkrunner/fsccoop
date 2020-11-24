@@ -1,0 +1,387 @@
+diff --git a/application/controllers/Account.php b/application/controllers/Account.php
+index 3beb422..46743b7 100644
+--- a/application/controllers/Account.php
++++ b/application/controllers/Account.php
+@@ -9,6 +9,10 @@ class Account extends CI_Controller {
+     }
+ 
+     public function index() {
++        //Get setting.
++        $allow_flexible = $this->db->select("*")->from("coop_account_setting")->where("type = 'allow_flexible_generate' AND value = 1")->get()->row_array();
++        $arr_data['allow_flexible'] = $allow_flexible;
++
+         $account_dates = $this->db->select("account_datetime")->from("coop_account")->where("(account_status != 2 OR account_status is null)")->order_by("account_datetime desc")->group_by("account_datetime")->get()->result_array();
+         $page_names = array();
+         $index = 0;
+@@ -344,33 +348,44 @@ class Account extends CI_Controller {
+             $account_type = $_POST["journal_type"] == "RV" ? "credit" : "debit";
+             $account_cash_type = $account_type == "credit" ? "debit" : "credit";
+             $total_amount = 0;
++            $has_credit = 0;
++            $has_debit = 0;
+             foreach($data['coop_account_detail'] as $key => $value){
+                 $data_insert = array();
+                 $data_insert['account_id'] = $account_id;
+-                $data_insert['account_type'] = $account_type;
+-                $data_insert['account_amount'] = $value['account_amount'];
++                $data_insert['account_type'] = !empty($value['account_type']) ? $value['account_type'] : $account_type;
++                $data_insert['account_amount'] =  $value['account_amount'];
+                 $data_insert['account_chart_id'] = $value['account_chart_id'];
+                 $data_insert['description'] = $value['account_description'];
+                 $data_insert['created_at'] = $process_timestamp;
+                 $this->db->insert('coop_account_detail', $data_insert);
+                 $total_amount += $value['account_amount'];
+ 
+-                $this->account_transaction->increase_decrease_budget_year($value["account_chart_id"], $value["account_amount"], $account_type, $budget_year_be, 1);
++                if($value['account_type'] == "credit") {
++                    $has_credit = 1;
++                } else if ($value['account_type'] == "debit") {
++                    $has_debit = 1;
++                }
++
++                $this->account_transaction->increase_decrease_budget_year($value["account_chart_id"], $value["account_amount"], (!empty($value['account_type']) ? $value['account_type'] : $account_type), $budget_year_be, 1);
+             }
+ 
+-            //Get account for cash
+-            $cash_account = $this->db->select("*")->from("coop_account_setting")->where("type = 'cash_chart_id'")->get()->row();
+-            $cash_id = $cash_account->value;
++            //Generate cash if do not have two side of data.
++            if($has_credit == 0 || $has_debit == 0) {
++                //Get account for cash.
++                $cash_account = $this->db->select("*")->from("coop_account_setting")->where("type = 'cash_chart_id'")->get()->row();
++                $cash_id = $cash_account->value;
+ 
+-            $data_insert = array();
+-            $data_insert['account_id'] = $account_id;
+-            $data_insert['account_type'] = $account_cash_type;
+-            $data_insert['account_amount'] = $total_amount;
+-            $data_insert['account_chart_id'] = $cash_id;
+-            $data_insert['created_at'] = $process_timestamp;
+-            $this->db->insert('coop_account_detail', $data_insert);
++                $data_insert = array();
++                $data_insert['account_id'] = $account_id;
++                $data_insert['account_type'] = $account_cash_type;
++                $data_insert['account_amount'] = $total_amount;
++                $data_insert['account_chart_id'] = $cash_id;
++                $data_insert['created_at'] = $process_timestamp;
++                $this->db->insert('coop_account_detail', $data_insert);
+ 
+-            $this->account_transaction->increase_decrease_budget_year($cash_id, $value["account_amount"], $account_cash_type, $budget_year_be, 1);
++                $this->account_transaction->increase_decrease_budget_year($cash_id, $value["account_amount"], $account_cash_type, $budget_year_be, 1);
++            }
+         }
+ 
+         echo"<script> document.location.href='".base_url(PROJECTPATH.'/account')."'; </script>";
+@@ -2370,6 +2385,19 @@ class Account extends CI_Controller {
+                             ->where("t1.account_id = '{$account_id}'")
+                             ->get()->result_array();
+         $result["details"] = $details;
++
++        //Check if compound.
++        $cash_account = $this->db->select("*")->from("coop_account_setting")->where("type = 'cash_chart_id'")->get()->row();
++        $cash_chart_id = $cash_account->value;
++        $result['is_compound'] = 0;
++        foreach($details as $detail) {
++            if(($account->journal_type == "PV" || $account->journal_type == "P") && $detail['account_type'] == "credit" && $detail['account_chart_id'] != $cash_chart_id) {
++                $result['is_compound'] = 1;
++            } else if (($account->journal_type == "RV" || $account->journal_type == "R") && $detail['account_type'] == "credit" && $detail['account_chart_id'] != $cash_chart_id) {
++                $result['is_compound'] = 1;
++            }
++        }
++
+         echo json_encode($result);
+         exit;
+     }
+diff --git a/application/views/account/index.php b/application/views/account/index.php
+index d94eba0..5a15266 100644
+--- a/application/views/account/index.php
++++ b/application/views/account/index.php
+@@ -139,6 +139,13 @@
+                     <button type="button" class="btn btn-primary min-width-100" onclick="tran_modal(1)">เงินสด</button>
+                     <button class="btn btn-danger min-width-100" type="button" onclick="tran_modal(2)">เงินโอน</button>
+                     <button class="btn btn-primary min-width-100" type="button" onclick="tran_modal(3)">ปรัปปรุง</button>
++                <?php
++                    if(!empty($allow_flexible)) {
++                ?>
++                    <button class="btn btn-danger min-width-100" type="button" onclick="tran_modal(4)">พิเศษ</button>
++                <?php
++                    }
++                ?>
+                 </div>
+             </div>
+         </div>
+@@ -314,6 +321,89 @@
+         </div>
+     </div>
+ </div>
++<div id="add_account_sp" tabindex="-1" role="dialog" class="modal fade">
++    <div class="modal-dialog modal-dialog-account">
++        <div class="modal-content">
++            <div class="modal-header modal-header-confirmSave">
++                <h2 class="modal-title">บันทึกรายการบัญชี</h2>
++            </div>
++            <div class="modal-body">
++                <form action="<?php echo base_url(PROJECTPATH.'/account/account_save'); ?>" method="post" id="form_sp">
++                    <input id="input_number_sp" type="hidden" value="0">
++                    <input id="account_id_sp" name="account_id" type="hidden" value="">
++                    <div class="row">
++                        <div class="form-group">
++                            <label class="col-sm-3 control-label right"> การชำระเงิน</label>
++                            <div class="col-sm-3">
++                                <span id="show_pay_type2" style="">
++                                    <input type="radio" name="journal_type" id="pay_type_sp_0" value="RV"> ด้านรับ &nbsp;&nbsp;
++                                    <input type="radio" name="journal_type" id="pay_type_sp_1" value="PV"> ด้านจ่าย &nbsp;&nbsp;
++                                    <input type="radio" name="journal_type" id="pay_type_sp_2" value="JV"> ด้านโอน &nbsp;&nbsp;
++                                </span>
++                            </div>
++                        </div>
++                    </div>
++                    <div class="row">
++                        <div class="form-group">
++                            <label class="col-sm-3 control-label">วันที่</label>
++                            <div class="col-sm-3">
++                                <div class="input-with-icon">
++                                    <div class="form-group">
++                                        <input id="account_datetime_sp" name="data[coop_account][account_datetime]" class="form-control m-b-1 type_input" type="text"
++                                            value="<?php echo $this->center_function->mydate2date(date('Y-m-d')); ?>" data-date-language="th-th" style="padding-left:38px;">
++                                        <span class="icon icon-calendar input-icon m-f-1"></span>
++                                    </div>
++                                </div>
++                            </div>
++                        </div>
++                    </div>
++                    <div class="row">
++                        <div class="form-group">
++                            <label class="col-sm-3 control-label">รายละเอียดรายการบัญชี</label>
++                            <div class="col-sm-6">
++                                <input id="account_description_sp" name="data[coop_account][account_description]" class="form-control m-b-1 type_input" type="text" value="">
++                            </div>
++                        </div>
++                    </div>
++                    <div class="form-group text-right">
++                        <button type="button" id="btn_debit_sp" class="btn btn-primary min-width-100 btn-width-auto" onclick="add_account_detail_sp('debit')">เพิ่มรายการเดบิต</button>
++                        <button type="button" id="btn_credit_sp" class="btn btn-primary min-width-100 btn-width-auto" onclick="add_account_detail_sp('credit')">เพิ่มรายการเครดิต</button>
++                    </div>
++                    <div class="bs-example" data-example-id="striped-table">
++                        <table class="table table-striped">
++                            <thead>
++                            <tr>
++                                <th class="font-normal" width="30%"> รหัสบัญชี </th>
++                                <th class="font-normal" width="40%"> รายละเอียด </th>
++                                <th class="font-normal" width="15%"> เดบิต </th>
++                                <th class="font-normal" width="15%"> เครดิต </th>
++                            </tr>
++                            </thead>
++                            <tbody id="account_data_sp">
++                            </tbody>
++                        </table>
++                        <div class="form-group col-sm-6">
++                            <label class="col-sm-3 control-label">ยอดรวม เดบิต</label>
++                            <div class="col-sm-6">
++                                <input id="sum_debit_sp" name="sum_debit" class="form-control m-b-1 type_input" type="text" value="" readonly>
++                            </div>
++                        </div>
++                        <div class="form-group col-sm-6">
++                            <label class="col-sm-3 control-label">ยอดรวม เครดิต</label>
++                            <div class="col-sm-6">
++                                <input id="sum_credit_sp" name="sum_credit" class="form-control m-b-1 type_input" type="text" value="" readonly>
++                            </div>
++                        </div>
++                    </div>
++                    <div class="form-group text-center">
++                        <button type="button" class="btn btn-primary min-width-100" onclick="form_submit_sp()">ตกลง</button>
++                        <button class="btn btn-danger min-width-100" type="button" onclick="clear_modal()">ยกเลิก</button>
++                    </div>
++                </form>
++            </div>
++        </div>
++    </div>
++</div>
+ <form action="<?php echo base_url(PROJECTPATH.'/account/cancel_account_transaction'); ?>" method="post" id="form1_cancel">
+     <input id="cancel_account_id" name="account_id" value=""/>
+ </form>
+@@ -387,7 +477,6 @@ echo script_tag($link);
+             $.get(base_url+"account/get_account_detail?account_id="+account_id
+ 			, function(result) {
+                 data = JSON.parse(result);
+-                console.log(data)
+                 if(data.journal_type == "JV" || data.journal_type == "SV") {
+                     $("#account_id_tran").val(data.account_id);
+                     $("#account_datetime").val(data.account_datetime_be);
+@@ -423,6 +512,47 @@ echo script_tag($link);
+                     call_sum_credit_debit(0,0);
+                     createSelect2("add_account_tran");
+                     $("#add_account_tran").modal("show");
++                } else if(data.is_compound == 1) {
++                    $("#account_id_sp").val(data.account_id);
++                    $("#account_datetime_sp").val(data.account_datetime_be);
++                    $("#account_description_sp").val(data.account_description);
++                    $("#journal_type_tran").val(data.journal_type);
++                    if(data.journal_type == "RV" || data.journal_type == "R") {
++                        $("#pay_type_sp_0").prop("checked", true);
++                    } else if (data.journal_type == "PV" || data.journal_type == "P") {
++                        $("#pay_type_sp_1").prop("checked", true);
++                    } else {
++                        $("#pay_type_sp_2").prop("checked", true);
++                    }
++                    $(".add-tr").remove();
++                    $("#input_number_sp").val(0);
++
++                    $.ajaxSetup({async: false});
++                    for (i = 0; i < data.details.length; i++) {
++                        detail = data.details[i];
++                        var input_number = $('#input_number_sp').val();
++                        $.post(base_url+"account/ajax_add_account_detail", {
++                            type: detail.account_type,
++                            input_number : input_number
++                        }
++                        , function(result){
++                            $('#account_data_sp').append(result);
++                            $("#sel_input_"+input_number).val(detail.account_chart_id);
++                            $("#desc_input_"+input_number).val(detail.description);
++                            if(detail.account_type == "debit") {
++                                $("#debit_input"+input_number).val(detail.account_amount);
++                            } else if (detail.account_type == "credit") {
++                                $("#credit_input"+input_number).val(detail.account_amount);
++                            }
++
++                            input_number++;
++                            $('#input_number_sp').val(input_number);
++                        });
++                    }
++
++                    call_sum_credit_debit(0,0);
++                    createSelect2("add_account_sp");
++                    $("#add_account_sp").modal("show");
+                 } else {
+                     if(data.journal_type == "PV") {
+                         $("#pay_type_1").prop("checked", true);
+diff --git a/assets/js/account.js b/assets/js/account.js
+index c37f3a4..43b017e 100644
+--- a/assets/js/account.js
++++ b/assets/js/account.js
+@@ -48,6 +48,7 @@ function clear_modal(id){
+ 	$('#add_account_cash').modal('hide');
+ 	$('#add_account_tran').modal('hide');
+ 	$('#add_account_type').modal('hide');
++	$('#add_account_sp').modal('hide');
+ }
+ 
+ function add_account(){
+@@ -92,6 +93,16 @@ function tran_modal(type){
+ 		$("#journal_type_tran").val("SV");
+ 		createSelect2("add_account_tran");
+ 		$("#add_account_tran").modal("show");
++	} else if (type == 4) {
++		$(".add-tr").remove();
++		$("#account_id_sp").val('');
++		$("#account_datetime_sp").val(day+"/"+month+"/"+year);
++		$("#account_description_sp").val('');
++		$("#sum_debit_sp").val(0);
++		$("#sum_credit_sp").val(0);
++		$("#journal_type_sp").val("SV");
++		createSelect2("add_account_sp");
++		$("#add_account_sp").modal("show");
+ 	}
+ }
+ 
+@@ -127,6 +138,10 @@ function call_sum_credit_debit(number,type) {
+ 	$('#sum_credit').val(credit_input_now);
+ 	format_the_number_decimal(document.getElementById("sum_debit"));
+ 	format_the_number_decimal(document.getElementById("sum_credit"));
++	$('#sum_debit_sp').val(debit_input_now);
++	$('#sum_credit_sp').val(credit_input_now);
++	format_the_number_decimal(document.getElementById("sum_debit_sp"));
++	format_the_number_decimal(document.getElementById("sum_credit_sp"));
+ }
+ 
+ function add_account_detail(type){
+@@ -158,6 +173,34 @@ function add_account_detail(type){
+ 	});
+ }
+ 
++function add_account_detail_sp(type){
++	var void_input = 0;
++	var debit_input = 0;
++	var credit_input = 0;
++	$('.account_detail_sp').each(function(){
++		if($(this).val()==''){
++			void_input++;
++		}
++	});
++	$('.debit_input').each(function(){
++		debit_input = parseFloat(debit_input) + parseFloat(removeCommas($(this).val()));
++	});
++	$('.credit_input').each(function(){
++		credit_input = parseFloat(credit_input) + parseFloat(removeCommas($(this).val()));
++	});
++	var input_number = $('#input_number_sp').val();
++	$.post(base_url+"account/ajax_add_account_detail", {
++		type: type,
++		input_number : input_number
++	}
++	, function(result){
++		$('#account_data_sp').append(result);
++		input_number++;
++		$('#input_number_sp').val(input_number);
++		createSelect2("add_account_sp");
++	});
++}
++
+ function form_submit(){
+ 	var text_alert = '';
+ 	var void_input = 0;
+@@ -205,6 +248,53 @@ function form_submit(){
+ 	}
+ }
+ 
++function form_submit_sp(){
++	var text_alert = '';
++	var void_input = 0;
++	var debit_input = 0;
++	var credit_input = 0;
++	if($('#account_datetime_sp').val()==''){
++		text_alert += ' - กรุณาระบุวันที่ของรายการ\n';
++	}
++	if($('#account_description_sp').val()==''){
++		text_alert += ' - กรุณาระบุรายละเอียดของรายการ\n';
++	}
++	$('.account_detail').each(function(){
++		if($(this).val()==''){
++			void_input++;
++		}
++	});
++	$(".account_detail_sel").each(function() {
++		if($(this).val()==''){
++			void_input++;
++		}
++	});
++	if(void_input>0){
++		text_alert += ' - กรุณาระบุข้อมูล เดบิต เครดิต ให้ครบถ้วน\n';
++	}
++	$('.debit_input').each(function(){
++		debit_input = parseFloat(debit_input) + parseFloat(removeCommas($(this).val()));
++	});
++	$('.credit_input').each(function(){
++		credit_input = parseFloat(credit_input) + parseFloat(removeCommas($(this).val()));
++	});
++	if(credit_input != debit_input){
++		text_alert += ' - กรุณาลงรายการ เดบิต และ เครดิตให้เท่ากัน\n';
++	}
++
++	if(text_alert!='') {
++		swal('เกิดข้อผิดพลาด',text_alert,'warning');
++	} else {
++		$(".debit_input").each(function() {
++			$(this).val(removeCommas($(this).val()));
++		});
++		$(".credit_input").each(function() {
++			$(this).val(removeCommas($(this).val()));
++		});
++		$('#form_sp').submit();
++	}
++}
++
+ function form_cash_submit() {
+ 	var text_alert = '';
+ 	var void_input = 0;
